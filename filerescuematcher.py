@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+# IDEAS
+# - Make it work for binary files (not using whole lines to calculate the ratio)
+# - Make it faster by using an index on the right tree, e.g. by putting 10-char snippets into a snippet-to-[file] dict
+
 import sys
 import os
 
