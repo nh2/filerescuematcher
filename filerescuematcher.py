@@ -153,7 +153,7 @@ def rescue_matcher(left_tree, right_tree, prematch_filters=[], min_ratio=0.0, ou
 
 	for left_path, best_match in tree_matches:
 		if best_match.ratio >= min_ratio:
-			print("best match (%s) %s %s" % (best_match.ratio, left_path, best_match.file))
+			print("best match (%.4f) %s %s" % (best_match.ratio, left_path, best_match.file))
 			if output_tree:
 				copy_full_path(best_match.file, os.path.join(output_tree, left_path))
 
