@@ -121,19 +121,28 @@ def find_tree_matches(left, right, prematch_filter=None):
 					print("Error: %s%s" % (e, explanation))
 		yield left_path, best_match
 
+def copy_full_path(src, dst):
+	import shutil
+	dst_dir = os.path.dirname(dst)
+	if not os.path.exists(dst_dir):
+		os.makedirs(dst_dir)
+	shutil.copyfile(src, dst)
+
 def mimetype_filter(left_path, right_path):
 	return mimetype(left_path) == mimetype(right_path)
 
 def main():
 	check_diff_program_or_die()
 
-	parser = argparse.ArgumentParser(description='Compare two trees of files and tell which ones from the left tree match best with wich ones from the right tree.')
-	parser.add_argument('left_tree', help='The tree for which will be tried to find a matching equivalent for each of the files in this tree.')
-	parser.add_argument('right_tree', help='The tree matching files are searched for.')
+	parser = argparse.ArgumentParser(description='Compares two trees of files and tells which ones from the left tree match best with which ones from the right tree.')
+	parser.add_argument('left_tree', help='For each file in this tree, it will be tried to find a matching equivalent from right_tree.')
+	parser.add_argument('right_tree', help='The tree in which matching files are searched for.')
 
 	parser.add_argument('--min-ratio', type=float, default=0.0, help='Only print matching having a line match ratio >= MIN_RATIO')
 
 	parser.add_argument('--mimetype-filter', dest='mimetype_filter', action='store_true', help='Skip file matching if mimetypes do not match')
+
+	parser.add_argument('--output-tree', metavar="DIR", help='If specified, matching files found in right_tree found are saved to DIR, where they get the same path/filename as their their equivalents from left_tree.')
 
 	args = parser.parse_args()
 
@@ -149,6 +158,8 @@ def main():
 	for left_path, best_match in tree_matches:
 		if best_match.ratio >= args.min_ratio:
 			print("best match (%s) %s %s" % (best_match.ratio, left_path, best_match.file))
+			if args.output_tree:
+				copy_full_path(best_match.file, os.path.join(args.output_tree, left_path))
 
 if __name__ == '__main__':
 	try:
