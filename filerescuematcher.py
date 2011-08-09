@@ -146,15 +146,15 @@ def main():
 
 	args = parser.parse_args()
 
-	prematch_filters = []	
+	prematch_filters = []
 	if(args.mimetype_filter):
 		prematch_filters.append(mimetype_filter)
-	
+
 	def prematch_filter(left_path, right_path):
 		return all( filter_fun(left_path, right_path) for filter_fun in prematch_filters )
-	
+
 	tree_matches = find_tree_matches(args.left_tree, args.right_tree, prematch_filter)
-	 
+
 	for left_path, best_match in tree_matches:
 		if best_match.ratio >= args.min_ratio:
 			print("best match (%s) %s %s" % (best_match.ratio, left_path, best_match.file))
