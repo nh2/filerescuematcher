@@ -100,25 +100,26 @@ def find_tree_matches(left, right, prematch_filter=None):
 	left_paths = build_file_list(left)
 	right_paths = build_file_list(right)
 
+	class Match(namedtuple("Match", "ratio file")):
+		def __lt__(self, o):
+			return self.ratio < o.ratio
+
 	for left_path in left_paths:
-		best_match = (0.0, None)  # format: (best_ratio, best_right_path)
-		print("searching for best match for %s" % left_path, end=" - ")
+		best_match = Match(0.0, None)  # format: (best_ratio, best_right_path)
+		#print("searching for best match for %s" % left_path)
 		for right_path in right_paths:
 			if prematch_filter is None or prematch_filter(left_path, right_path):
 				#print("comparing %s with %s" % (left_path, right_path))
 				try:
 					ratio = common_lines_ratio(left_path, right_path)
-					try:
-						best_match = max(best_match, (ratio, right_path), key=lambda t: t[0])
-					except:
-						print(best_match, ratio, right_path)
+					best_match = max(best_match, Match(ratio, right_path), key=lambda m: m.ratio)
 					#print("ratio: ", ratio)
 				except DiffError as e:
 					explanation = ""
 					if e.returncode == 2:
 						explanation = " - Perhaps the files are binary files"
 					print("Error: %s%s" % (e, explanation))
-		print("best match: %s with ratio %s" % (best_match[1], best_match[0]))
+		yield left_path, best_match
 
 def mimetype_filter(left_path, right_path):
 	return mimetype(left_path) == mimetype(right_path)
@@ -129,7 +130,9 @@ def main():
 	parser = argparse.ArgumentParser(description='Compare two trees of files and tell which ones from the left tree match best with wich ones from the right tree.')
 	parser.add_argument('left_tree', help='The tree for which will be tried to find a matching equivalent for each of the files in this tree.')
 	parser.add_argument('right_tree', help='The tree matching files are searched for.')
-	
+
+	parser.add_argument('--min-ratio', type=float, default=0.0, help='Only print matching having a line match ratio >= MIN_RATIO')
+
 	parser.add_argument('--mimetype-filter', dest='mimetype_filter', action='store_true', help='Skip file matching if mimetypes do not match')
 
 	args = parser.parse_args()
@@ -141,7 +144,11 @@ def main():
 	def prematch_filter(left_path, right_path):
 		return all( filter_fun(left_path, right_path) for filter_fun in prematch_filters )
 	
-	find_tree_matches(args.left_tree, args.right_tree, prematch_filter)
+	tree_matches = find_tree_matches(args.left_tree, args.right_tree, prematch_filter)
+	 
+	for left_path, best_match in tree_matches:
+		if best_match.ratio >= args.min_ratio:
+			print("best match (%s) %s %s" % (best_match.ratio, left_path, best_match.file))
 
 if __name__ == '__main__':
 	try:
