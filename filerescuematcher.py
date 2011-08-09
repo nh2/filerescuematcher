@@ -13,9 +13,11 @@ import difflib
 import re
 from collections import namedtuple
 
+
 def die(msg, error_code=1):
 	print("Error: " + msg, file=sys.stderr)
 	exit(error_code)
+
 
 DIFF_PROGRAM = os.environ.get('DIFF') or "diff"
 
@@ -23,7 +25,9 @@ def check_diff_program_or_die():
 	if b"--ed-line-numbers-only" not in subprocess.check_output([DIFF_PROGRAM, "--help"]):
 		die("diff lacks --ed-line-numbers-only option!")
 
+
 DIFF_ED_LINE_RE = re.compile(r"^(?P<start>\d+)(,(?P<end>\d+))?(?P<type>[a|c|d])$")
+
 def parse_diff_ed_line_number_header(line):
 	def die_invalid_input():
 		die("Tried to parse invalid ed script line number header output: %s" % line)
@@ -38,6 +42,7 @@ def parse_diff_ed_line_number_header(line):
 	start, end = match_dict['start'], match_dict.get('end')
 	return EdDiffLine(match_dict['type'], int(start), int(end) if end else None)
 
+
 class EdDiffLine(namedtuple('EdDiffLine', 'type start end')):
 	@property
 	def size(self):
@@ -46,10 +51,12 @@ class EdDiffLine(namedtuple('EdDiffLine', 'type start end')):
 		else:
 			return self.end - self.start + 1
 
+
 class DiffError(Exception):
 	def __init__(self, returncode):
 		Exception.__init__(self, "Got bad return code %s from diff" % returncode)
 		self.returncode = returncode
+
 
 def diff_ed_lines(left_path, right_path):
 	proc = subprocess.Popen([DIFF_PROGRAM, "--ed-line-numbers-only", left_path, right_path], stdout=subprocess.PIPE)
@@ -83,10 +90,12 @@ class CachingDict(dict):
 
 
 mime_cache = CachingDict()
+
 def mimetype(path):
 	import subprocess
 	mime_fn = lambda: subprocess.check_output(["file", "-ib", path]).decode("utf-8").split(";")[0]
 	return mime_cache.get_or_cache(path, mime_fn)
+
 
 def build_file_list(dir):
 	paths = []
@@ -95,6 +104,7 @@ def build_file_list(dir):
 			path = os.path.join(dirpath, filename)
 			paths.append(path)
 	return paths
+
 
 def find_tree_matches(left, right, prematch_filter=None):
 	left_paths = build_file_list(left)
@@ -118,8 +128,9 @@ def find_tree_matches(left, right, prematch_filter=None):
 					explanation = ""
 					if e.returncode == 2:
 						explanation = " - Perhaps the files are binary files"
-					print("Error: %s%s" % (e, explanation))
+					print("Error: %s (for files %s and %s)%s" % (e, left_path, right_path, explanation))
 		yield left_path, best_match
+
 
 def copy_full_path(src, dst):
 	import shutil
@@ -128,8 +139,24 @@ def copy_full_path(src, dst):
 		os.makedirs(dst_dir)
 	shutil.copyfile(src, dst)
 
+
 def mimetype_filter(left_path, right_path):
 	return mimetype(left_path) == mimetype(right_path)
+
+
+def rescue_matcher(left_tree, right_tree, prematch_filters=[], min_ratio=0.0, output_tree=None):
+
+	def prematch_filter(left_path, right_path):
+		return all( filter_fun(left_path, right_path) for filter_fun in prematch_filters )
+
+	tree_matches = find_tree_matches(left_tree, right_tree, prematch_filter)
+
+	for left_path, best_match in tree_matches:
+		if best_match.ratio >= min_ratio:
+			print("best match (%s) %s %s" % (best_match.ratio, left_path, best_match.file))
+			if output_tree:
+				copy_full_path(best_match.file, os.path.join(output_tree, left_path))
+
 
 def main():
 	check_diff_program_or_die()
@@ -140,7 +167,7 @@ def main():
 
 	parser.add_argument('--min-ratio', type=float, default=0.0, help='Only print matching having a line match ratio >= MIN_RATIO')
 
-	parser.add_argument('--mimetype-filter', dest='mimetype_filter', action='store_true', help='Skip file matching if mimetypes do not match')
+	parser.add_argument('--mimetype-filter', dest='mimetype_filter', action='store_true', help='Skip file matching if mimetypes do not match. Can also speed up the matching process.')
 
 	parser.add_argument('--output-tree', metavar="DIR", help='If specified, matching files found in right_tree found are saved to DIR, where they get the same path/filename as their their equivalents from left_tree.')
 
@@ -150,16 +177,8 @@ def main():
 	if(args.mimetype_filter):
 		prematch_filters.append(mimetype_filter)
 
-	def prematch_filter(left_path, right_path):
-		return all( filter_fun(left_path, right_path) for filter_fun in prematch_filters )
+	rescue_matcher(args.left_tree, args.right_tree, prematch_filters, args.min_ratio, args.output_tree)
 
-	tree_matches = find_tree_matches(args.left_tree, args.right_tree, prematch_filter)
-
-	for left_path, best_match in tree_matches:
-		if best_match.ratio >= args.min_ratio:
-			print("best match (%s) %s %s" % (best_match.ratio, left_path, best_match.file))
-			if args.output_tree:
-				copy_full_path(best_match.file, os.path.join(args.output_tree, left_path))
 
 if __name__ == '__main__':
 	try:
