@@ -116,10 +116,6 @@ def find_tree_matches(left, right, prematch_filter=None):
 	left_paths = build_file_list(left)
 	right_paths = build_file_list(right)
 
-	class Match(namedtuple("Match", "ratio file")):
-		def __lt__(self, o):
-			return self.ratio < o.ratio
-
 	for left_path in left_paths:
 		matches = {}
 		for right_path in right_paths:
