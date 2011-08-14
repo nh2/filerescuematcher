@@ -4,11 +4,13 @@
 # - Make it work for binary files (not using whole lines to calculate the ratio)
 # - Make it faster by using an index on the right tree, e.g. by putting 10-char snippets into a snippet-to-[file] dict
 
+from __future__ import print_function
+
 import sys
 import os
 
-if sys.version_info < (3,2):
-	sys.stderr.write("Python >= 3.2 required\n")
+if sys.version_info < (2,7) or (sys.version_info.major == 3 and sys.version_info < (3,2)):
+	sys.stderr.write("Python 3 >= 3.2 or Python 2 >= 2.7 required\n")
 	sys.exit(1)
 
 import subprocess
