@@ -171,7 +171,7 @@ def main():
 
 	parser.add_argument('--min-ratio', type=float, default=0.0, help='Only print matching having a line match ratio >= MIN_RATIO')
 
-	parser.add_argument('--mimetype-filter', dest='mimetype_filter', action='store_true', help='Skip file matching if mimetypes do not match. Can also speed up the matching process.')
+	parser.add_argument('--mimetype-filter', action='store_true', help='Skip file matching if mimetypes do not match. Can also speed up the matching process.')
 
 	parser.add_argument('--output-tree', metavar="DIR", help='If specified, matching files found in right_tree found are saved to DIR, where they get the same path/filename as their their equivalents from left_tree.')
 
