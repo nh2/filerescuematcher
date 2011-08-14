@@ -145,7 +145,7 @@ def mimetype_filter(left_path, right_path):
 	return mimetype(left_path) == mimetype(right_path)
 
 
-def rescue_matcher(left_tree, right_tree, prematch_filters=[], min_ratio=0.0, copy_dest=None):
+def rescue_matcher(left_tree, right_tree, prematch_filters=[], min_ratio=0.0, copy_dest=None, copy_least_matching=False):
 
 	def prematch_filter(left_path, right_path):
 		return all( filter_fun(left_path, right_path) for filter_fun in prematch_filters )
@@ -161,7 +161,7 @@ def rescue_matcher(left_tree, right_tree, prematch_filters=[], min_ratio=0.0, co
 				ratio = matches_dict[right_path]
 				print("  %.4f %s" % (ratio, right_path))
 			if copy_dest:
-				best_match_path = selected_files[0]
+				best_match_path = selected_files[-1 if copy_least_matching else 0]
 				copy_full_path(best_match_path, os.path.join(copy_dest, left_path))
 
 
@@ -178,13 +178,19 @@ def main():
 
 	parser.add_argument('--copy-dest', metavar="DIR", help='If specified, matching files found in right_tree found are saved to DIR, where they get the same path/filename as their their equivalents from left_tree.')
 
+	parser.add_argument('--copy-least-matching', action='store_true', help='Instead of copying the best matching file to the directory given in --copy-dest, copy the least matching one that exceeds MIN_RATIO. This is useful if there are different revisions of a file, with the most matching ones being oldest and the least matching ones the most recent ones (e.g. when a version control system was used).')
+
 	args = parser.parse_args()
+
+	# Handle argument confilcts
+	if args.copy_dest is None and args.copy_least_matching:
+		die("--copy-dest has to be specified for --copy-least-matching to take effect!")
 
 	prematch_filters = []
 	if(args.mimetype_filter):
 		prematch_filters.append(mimetype_filter)
 
-	rescue_matcher(args.left_tree, args.right_tree, prematch_filters, args.min_ratio, args.copy_dest)
+	rescue_matcher(args.left_tree, args.right_tree, prematch_filters, args.min_ratio, args.copy_dest, args.copy_least_matching)
 
 
 if __name__ == '__main__':
