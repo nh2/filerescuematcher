@@ -29,9 +29,10 @@ DIFF_PROGRAM = os.environ.get('DIFF') or "diff"
 
 def check_diff_program_or_die():
 	if b"--ed-line-numbers-only" not in subprocess.check_output([DIFF_PROGRAM, "--help"]):
-		die("diff lacks --ed-line-numbers-only option!")
+		die("diff lacks --ed-line-numbers-only option! Set the DIFF environment variable to a diff binary that supports this option.")
 
 
+# Matches the ed hunk line headers in the output of diff -e, such as 12a, 12d, 12,15d, 12c, 12,15c. See http://www.gnu.org/s/diffutils/manual/#Detailed-ed
 DIFF_ED_LINE_RE = re.compile(r"^(?P<start>\d+)(,(?P<end>\d+))?(?P<type>[a|c|d])$")
 
 def parse_diff_ed_line_number_header(line):
@@ -44,7 +45,6 @@ def parse_diff_ed_line_number_header(line):
 	# Check for illegal "\d+,\d+a" as our regex allows that
 	if match_dict['type'] == 'a' and match_dict.get('end') is not None:
 		die_invalid_input()
-	# return (type, start, end or None)
 	start, end = match_dict['start'], match_dict.get('end')
 	return EdDiffLine(match_dict['type'], int(start), int(end) if end else None)
 
@@ -65,6 +65,10 @@ class DiffError(Exception):
 
 
 def diff_ed_lines(left_path, right_path):
+	"""
+	Returns the output of diff --ed-line-numbers-only left_path right_path.
+	Throws an exeption on a diff error, when the return code is not 0 or 1.
+	"""
 	proc = subprocess.Popen([DIFF_PROGRAM, "--ed-line-numbers-only", left_path, right_path], stdout=subprocess.PIPE)
 	out, err = proc.communicate()
 	if proc.returncode in (0,1):
@@ -74,20 +78,28 @@ def diff_ed_lines(left_path, right_path):
 
 
 def common_lines_ratio(left_path, right_path):
-	""" What fraction of their lines l and r have in common. """
+	"""
+	What fraction of their lines l and r have in common.
+	This is calculated as 2 * common_lines / (left_lines + right_lines).
+	"""
 	ed_output_lines = diff_ed_lines(left_path, right_path).decode("utf-8").strip().split('\n')
 	ed_lines = list(map(parse_diff_ed_line_number_header, ed_output_lines))
 	deleted_lines = sum( ed_line.size for ed_line in ed_lines if ed_line.type in ('c','d') )
 	# open in binary mode to prevent Python 3's platform-dependent encoding (e.g. utf-8)
-	left_length = len(open(left_path, 'rb').readlines())
-	right_length = len(open(right_path, 'rb').readlines())
-	common_lines = left_length - deleted_lines
-	ratio = 2.0 * common_lines / (left_length + right_length)
+	left_lines = len(open(left_path, 'rb').readlines())
+	right_lines = len(open(right_path, 'rb').readlines())
+	common_lines = left_lines - deleted_lines
+	ratio = 2.0 * common_lines / (left_lines + right_lines)
 	return ratio
 
 
 class CachingDict(dict):
+	""" A simple key-value cache based on a dict. """
 	def get_or_cache(self, key, val_fn):
+		"""
+		If key in self, return self[key].
+		Otherwise set self[key] = val_fn() and return the calculated value.
+		"""
 		cached = self.get(key)
 		if not cached:
 			cached = val_fn()
@@ -95,15 +107,20 @@ class CachingDict(dict):
 		return cached
 
 
-mime_cache = CachingDict()
-
-def mimetype(path):
-	import subprocess
-	mime_fn = lambda: subprocess.check_output(["file", "-ib", path]).decode("utf-8").split(";")[0]
-	return mime_cache.get_or_cache(path, mime_fn)
+class MimetypeCache(CachingDict):
+	""" A file to mimetype cache """
+	def mimetype(self, path):
+		"""
+		Returns the mimetype of the given path in the form of file -ib.
+		Uses internal caching.
+		"""
+		import subprocess
+		mime_fn = lambda: subprocess.check_output(["file", "-ib", path]).decode("utf-8").split(";")[0]
+		return self.get_or_cache(path, mime_fn)
 
 
 def build_file_list(dir):
+	""" Returns a list of all files in the given directory as relative paths. """
 	paths = []
 	for dirpath, dirnames, filenames in os.walk(dir):
 		for filename in filenames:
@@ -112,26 +129,35 @@ def build_file_list(dir):
 	return paths
 
 
-def find_tree_matches(left, right, prematch_filter=None):
+def find_tree_matches(left, right, prematch_filter=None, silent_diff_errors=False):
+	"""
+	Traverses the directories given as left and right, calculating the ratio of how similar each file in right is to each file in left.
+	Runtime of no_files(left) * no_files(right).
+
+	:param prematch_filter If given, all comparisons for which prematch_filter(left_file, right_file) is False are skipped.
+	:param silent_diff_errors Prevent printing errors to stderr on bad diff return codes.
+	"""
 	left_paths = build_file_list(left)
 	right_paths = build_file_list(right)
 
 	for left_path in left_paths:
-		matches = {}
+		matches = {}  # {right_path: ratio}
 		for right_path in right_paths:
 			if prematch_filter is None or prematch_filter(left_path, right_path):
 				try:
 					ratio = common_lines_ratio(left_path, right_path)
 					matches[right_path] = ratio
 				except DiffError as e:
-					explanation = ""
-					if e.returncode == 2:
-						explanation = " - Perhaps the files are binary files"
-					print("Error: %s (for files %s and %s)%s" % (e, left_path, right_path, explanation))
+					if not silent_diff_errors:
+						explanation = ""
+						if e.returncode == 2:
+							explanation = " - Perhaps the files are binary files"
+						print("Error: %s (for files %s and %s)%s" % (e, left_path, right_path, explanation), file=sys.stderr)
 		yield left_path, matches
 
 
 def copy_full_path(src, dst):
+	""" Copies the file src to dst, recursively creating all parent directories of dst. """
 	import shutil
 	dst_dir = os.path.dirname(dst)
 	if not os.path.exists(dst_dir):
@@ -139,19 +165,32 @@ def copy_full_path(src, dst):
 	shutil.copyfile(src, dst)
 
 
-def mimetype_filter(left_path, right_path):
-	return mimetype(left_path) == mimetype(right_path)
+class MimetypeFilter(object):
+	""" A filter to be passed into rescue_matcher that filters away all files which do not have the same mime type. """
+	def __init__(self):
+		self.mime_cache = MimetypeCache()
+	def filter(self, left_path, right_path):
+		return self.mime_cache.mimetype(left_path) == self.mime_cache.mimetype(right_path)
 
 
-def rescue_matcher(left_tree, right_tree, prematch_filters=[], min_ratio=0.0, copy_dest=None, copy_least_matching=False):
+def rescue_matcher(left_tree, right_tree, min_ratio=0.0, prematch_filters=[], copy_dest=None, copy_least_matching=False):
+	"""
+	Compare all files in left_tree to all files in right_tree, and print out a ratio how similar they are to each other.
+	
+	:param min_ratio Ratio output is skipped for all files that have a common files ratio less than this.
+	:param prematch_filters A list of objects having a filter() method. For all files (l, r) from (left_tree, right_tree) for which one of the filter()s returns false, comparison and ratio output of l and r are skipped.
+	:param copy_dest The best matching from right_tree are copied to this directory, getting the file names of their best matching equivalents in left_tree.
+	:param copy_least_matching If True, the file with the lowest ratio bigger than min_ratio is chosen as the best matching file for being copied to copy_dest. Ignored if copy_dest is None.
+	"""
 
+	# Filters out a file comparison if one of the prematch_filters filters it out
 	def prematch_filter(left_path, right_path):
-		return all( filter_fun(left_path, right_path) for filter_fun in prematch_filters )
+		return all( f.filter(left_path, right_path) for f in prematch_filters )
 
 	tree_matches = find_tree_matches(left_tree, right_tree, prematch_filter)
 
 	for left_path, matches_dict in tree_matches:
-		# matches >= min_ratio sorted by ratio in descending order
+		# all matches >= min_ratio sorted by ratio in descending order
 		selected_files = sorted(( k for k in matches_dict if matches_dict[k] >= min_ratio ), key=matches_dict.get, reverse=True)
 		if selected_files:
 			print("%s" % left_path)
@@ -172,7 +211,7 @@ def main():
 
 	parser.add_argument('--min-ratio', type=float, default=0.0, help='Only print matching having a line match ratio >= MIN_RATIO')
 
-	parser.add_argument('--mimetype-filter', action='store_true', help='Skip file matching if mimetypes do not match. Can also speed up the matching process.')
+	parser.add_argument('--mimetype-filter', action='store_true', help='Skip file matching if mimetypes do not match. Can yield more useful results and speed up the matching process.')
 
 	parser.add_argument('--copy-dest', metavar="DIR", help='If specified, matching files found in right_tree found are saved to DIR, where they get the same path/filename as their their equivalents from left_tree.')
 
@@ -186,9 +225,9 @@ def main():
 
 	prematch_filters = []
 	if(args.mimetype_filter):
-		prematch_filters.append(mimetype_filter)
+		prematch_filters.append(MimetypeFilter())
 
-	rescue_matcher(args.left_tree, args.right_tree, prematch_filters, args.min_ratio, args.copy_dest, args.copy_least_matching)
+	rescue_matcher(args.left_tree, args.right_tree, args.min_ratio, prematch_filters, args.copy_dest, args.copy_least_matching)
 
 
 if __name__ == '__main__':
