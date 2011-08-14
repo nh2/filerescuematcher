@@ -119,21 +119,18 @@ def find_tree_matches(left, right, prematch_filter=None):
 			return self.ratio < o.ratio
 
 	for left_path in left_paths:
-		best_match = Match(0.0, None)  # format: (best_ratio, best_right_path)
-		#print("searching for best match for %s" % left_path)
+		matches = {}
 		for right_path in right_paths:
 			if prematch_filter is None or prematch_filter(left_path, right_path):
-				#print("comparing %s with %s" % (left_path, right_path))
 				try:
 					ratio = common_lines_ratio(left_path, right_path)
-					best_match = max(best_match, Match(ratio, right_path), key=lambda m: m.ratio)
-					#print("ratio: ", ratio)
+					matches[right_path] = ratio
 				except DiffError as e:
 					explanation = ""
 					if e.returncode == 2:
 						explanation = " - Perhaps the files are binary files"
 					print("Error: %s (for files %s and %s)%s" % (e, left_path, right_path, explanation))
-		yield left_path, best_match
+		yield left_path, matches
 
 
 def copy_full_path(src, dst):
@@ -148,18 +145,24 @@ def mimetype_filter(left_path, right_path):
 	return mimetype(left_path) == mimetype(right_path)
 
 
-def rescue_matcher(left_tree, right_tree, prematch_filters=[], min_ratio=0.0, output_tree=None):
+def rescue_matcher(left_tree, right_tree, prematch_filters=[], min_ratio=0.0, copy_dest=None):
 
 	def prematch_filter(left_path, right_path):
 		return all( filter_fun(left_path, right_path) for filter_fun in prematch_filters )
 
 	tree_matches = find_tree_matches(left_tree, right_tree, prematch_filter)
 
-	for left_path, best_match in tree_matches:
-		if best_match.ratio >= min_ratio:
-			print("best match (%.4f) %s %s" % (best_match.ratio, left_path, best_match.file))
-			if output_tree:
-				copy_full_path(best_match.file, os.path.join(output_tree, left_path))
+	for left_path, matches_dict in tree_matches:
+		# matches >= min_ratio sorted by ratio in descending order
+		selected_files = sorted(( k for k in matches_dict if matches_dict[k] >= min_ratio ), key=matches_dict.get, reverse=True)
+		if selected_files:
+			print("%s" % left_path)
+			for right_path in selected_files:
+				ratio = matches_dict[right_path]
+				print("  %.4f %s" % (ratio, right_path))
+			if copy_dest:
+				best_match_path = selected_files[0]
+				copy_full_path(best_match_path, os.path.join(copy_dest, left_path))
 
 
 def main():
@@ -173,7 +176,7 @@ def main():
 
 	parser.add_argument('--mimetype-filter', action='store_true', help='Skip file matching if mimetypes do not match. Can also speed up the matching process.')
 
-	parser.add_argument('--output-tree', metavar="DIR", help='If specified, matching files found in right_tree found are saved to DIR, where they get the same path/filename as their their equivalents from left_tree.')
+	parser.add_argument('--copy-dest', metavar="DIR", help='If specified, matching files found in right_tree found are saved to DIR, where they get the same path/filename as their their equivalents from left_tree.')
 
 	args = parser.parse_args()
 
@@ -181,7 +184,7 @@ def main():
 	if(args.mimetype_filter):
 		prematch_filters.append(mimetype_filter)
 
-	rescue_matcher(args.left_tree, args.right_tree, prematch_filters, args.min_ratio, args.output_tree)
+	rescue_matcher(args.left_tree, args.right_tree, prematch_filters, args.min_ratio, args.copy_dest)
 
 
 if __name__ == '__main__':
