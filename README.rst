@@ -16,11 +16,8 @@ If you have older versions of your files available, FileRescueMatcher can scan t
 Usage
 *****
 
-Note: You need a modified version of `GNU diff` to run FileRescueMatcher. See `Restrictions`_.
-
 ::
 
-  export DIFF=/path/to/modified/diff
   python filerescuematcher.py leftdirectory rightdirectory
 
 This will recursively go through all files in ``leftdirectory`` and for each of them print out how similar each file from ``rightdirectory`` is.
@@ -49,7 +46,6 @@ I knew that all files I had changed contained the string `GDK_SMOOTH_SCROLL`, so
 
 After that, I downloaded the original GTK version on which I had based my work to a ``gtk`` directory. I also knew that I had only changed files from the ``gtk/gtk+-3.0.12/gdk`` subdirectory, so I ran::
 
-  export DIFF=$HOME/opt/custom-diff/bin/diff
   python filerescuematcher.py gtk/gtk+-3.0.12/gdk INTERESTING --mimetype-filter --min-ratio 0.7 --copy-dest MATCHED --copy-least-matching
 
 and ended up with my lost files being saved in the ``MATCHED`` directory. Day made!
@@ -61,7 +57,6 @@ Restrictions
 * Python 2.7 or higher or Python 3.2 or higher required.
 * FileRescueMatcher currently only runs on Linux (and possibly other UNIX-like systems). If you need it for your platform, contact the author or supply a patch.
 * Only text files can be matched, binary files are not supported yet. It should  be fairly easy to extend it to also allow matching binary files, though.
-* A modified version of `GNU diff` that supports the `--ed-line-numbers-only` option is needed. This option yields the same output as ``diff -e``, but only prints the range of changed hunks, omitting the actual change contents.
 
 
 LICENSE
