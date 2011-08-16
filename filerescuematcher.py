@@ -17,7 +17,6 @@ if sys.version_info < (2,7) or (sys.version_info.major == 3 and sys.version_info
 
 import subprocess
 import argparse
-import difflib
 import re
 from collections import namedtuple
 
@@ -79,6 +78,10 @@ def diff_ed_lines(left_path, right_path):
 		raise DiffError(proc.returncode)
 
 
+def count_lines(path):
+	return len(open(path, 'rb').readlines())
+
+
 def common_lines_ratio(left_path, right_path):
 	"""
 	What fraction of their lines l and r have in common.
@@ -88,8 +91,8 @@ def common_lines_ratio(left_path, right_path):
 	ed_lines = list(map(parse_diff_ed_line_number_header, ed_output_lines))
 	deleted_lines = sum( ed_line.size for ed_line in ed_lines if ed_line.type in ('c','d') )
 	# open in binary mode to prevent Python 3's platform-dependent encoding (e.g. utf-8)
-	left_lines = len(open(left_path, 'rb').readlines())
-	right_lines = len(open(right_path, 'rb').readlines())
+	left_lines = count_lines(left_path)
+	right_lines = count_lines(right_path)
 	common_lines = left_lines - deleted_lines
 	ratio = 2.0 * common_lines / (left_lines + right_lines)
 	return ratio
@@ -208,6 +211,7 @@ def main():
 	check_diff_program_or_die()
 
 	parser = argparse.ArgumentParser(description='Compares two trees of files and tells which ones from the left tree match best with which ones from the right tree.')
+
 	parser.add_argument('left_tree', help='For each file in this tree, it will be tried to find a matching equivalent from right_tree.')
 	parser.add_argument('right_tree', help='The tree in which matching files are searched for.')
 
