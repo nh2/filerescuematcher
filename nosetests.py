@@ -44,14 +44,3 @@ def test_vcs_rescue_copy_dest():
 	args = shlex.split("python filerescuematcher.py test/vcs/known test/vcs/rescue --mimetype-filter --min-ratio 0.7 --copy-dest test/vcs/.copy-dest --copy-least-matching")
 	subprocess.check_output(args, env=ENV)
 	assert filecmp.cmp("test/vcs/rescue/file-matching-importthis-less.txt", "test/vcs/.copy-dest/test/vcs/known/importthis.txt")
-
-
-def test_diff_error():
-	if "diff (GNU diffutils) 3.0" in subprocess.check_output(["diff", "-v"]):
-		args = shlex.split("python filerescuematcher.py test/normal/known test/normal/rescue --mimetype-filter --min-ratio 0.7")
-		# Do not pass in DIFF env override
-		try:
-			out = subprocess.check_output(args, stderr=subprocess.STDOUT)
-			assert False
-		except subprocess.CalledProcessError as e:
-			assert "diff lacks --ed-line-numbers-only option" in e.output

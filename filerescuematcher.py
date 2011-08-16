@@ -26,54 +26,28 @@ def die(msg, error_code=1):
 	exit(error_code)
 
 
-DIFF_PROGRAM = os.environ.get('DIFF') or "diff"
-
-def check_diff_program_or_die():
-	if b"--ed-line-numbers-only" not in subprocess.check_output([DIFF_PROGRAM, "--help"]):
-		die("diff lacks --ed-line-numbers-only option! Set the DIFF environment variable to a diff binary that supports this option.")
-
-
-# Matches the ed hunk line headers in the output of diff -e, such as 12a, 12d, 12,15d, 12c, 12,15c. See http://www.gnu.org/s/diffutils/manual/#Detailed-ed
-DIFF_ED_LINE_RE = re.compile(r"^(?P<start>\d+)(,(?P<end>\d+))?(?P<type>[a|c|d])$")
-
-def parse_diff_ed_line_number_header(line):
-	def die_invalid_input():
-		die("Tried to parse invalid ed script line number header output: %s" % line)
-	match = DIFF_ED_LINE_RE.match(line.strip())
-	if match is None:
-		die_invalid_input()
-	match_dict = match.groupdict()
-	# Check for illegal "\d+,\d+a" as our regex allows that
-	if match_dict['type'] == 'a' and match_dict.get('end') is not None:
-		die_invalid_input()
-	start, end = match_dict['start'], match_dict.get('end')
-	return EdDiffLine(match_dict['type'], int(start), int(end) if end else None)
-
-
-class EdDiffLine(namedtuple('EdDiffLine', 'type start end')):
-	@property
-	def size(self):
-		if self.end is None:
-			return 1
-		else:
-			return self.end - self.start + 1
-
-
 class DiffError(Exception):
 	def __init__(self, returncode):
 		Exception.__init__(self, "Got bad return code %s from diff" % returncode)
 		self.returncode = returncode
 
 
-def diff_ed_lines(left_path, right_path):
-	"""
-	Returns the output of diff --ed-line-numbers-only left_path right_path.
-	Throws an exeption on a diff error, when the return code is not 0 or 1.
-	"""
-	proc = subprocess.Popen([DIFF_PROGRAM, "--ed-line-numbers-only", left_path, right_path], stdout=subprocess.PIPE)
+def count_common_lines(left_path, right_path):
+	# This custom diff command for each unchanged hunk prints the number lines in the hunk
+	args = [
+		"diff",
+		"--old-group-format=",
+		"--new-group-format=",
+		"--unchanged-group-format=%dN\n",
+		"--changed-group-format=",
+		left_path,
+		right_path,
+	]
+	proc = subprocess.Popen(args, stdout=subprocess.PIPE)
 	out, err = proc.communicate()
 	if proc.returncode in (0,1):
-		return out
+		unchanged_lines = sum(map(int, out.strip().split()))
+		return unchanged_lines
 	else:
 		raise DiffError(proc.returncode)
 
@@ -87,13 +61,10 @@ def common_lines_ratio(left_path, right_path):
 	What fraction of their lines l and r have in common.
 	This is calculated as 2 * common_lines / (left_lines + right_lines).
 	"""
-	ed_output_lines = diff_ed_lines(left_path, right_path).decode("utf-8").strip().split('\n')
-	ed_lines = list(map(parse_diff_ed_line_number_header, ed_output_lines))
-	deleted_lines = sum( ed_line.size for ed_line in ed_lines if ed_line.type in ('c','d') )
 	# open in binary mode to prevent Python 3's platform-dependent encoding (e.g. utf-8)
 	left_lines = count_lines(left_path)
 	right_lines = count_lines(right_path)
-	common_lines = left_lines - deleted_lines
+	common_lines = count_common_lines(left_path, right_path)
 	ratio = 2.0 * common_lines / (left_lines + right_lines)
 	return ratio
 
@@ -208,8 +179,6 @@ def rescue_matcher(left_tree, right_tree, min_ratio=0.0, prematch_filters=[], co
 
 
 def main():
-	check_diff_program_or_die()
-
 	parser = argparse.ArgumentParser(description='Compares two trees of files and tells which ones from the left tree match best with which ones from the right tree.')
 
 	parser.add_argument('left_tree', help='For each file in this tree, it will be tried to find a matching equivalent from right_tree.')
